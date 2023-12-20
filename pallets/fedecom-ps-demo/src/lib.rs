@@ -44,8 +44,8 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	#[pallet::getter(fn payments_ledger)]
-	pub(super) type PaymentsLedger<T: Config> = StorageNMap<
+	#[pallet::getter(fn payments)]
+	pub(super) type Payments<T: Config> = StorageNMap<
 		_,
 		(
 			NMapKey<Blake2_128Concat, T::AccountId>,
@@ -57,8 +57,8 @@ pub mod pallet {
 	>;
 
 	#[pallet::storage]
-	#[pallet::getter(fn confirmations_ledger)]
-	pub(super) type ConfirmationsLedger<T: Config> = StorageNMap<
+	#[pallet::getter(fn confirmations)]
+	pub(super) type Confirmations<T: Config> = StorageNMap<
 		_,
 		(
 			NMapKey<Blake2_128Concat, T::AccountId>,
@@ -72,25 +72,45 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		ElementGotFromPaymentsLedger {
+		// Events related to Payments StorageNMap
+		ElementGotFromPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 			value: u32,
 		},
-		ElementAddedToPaymentsLedger {
+		ElementAddedToPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 			value: u32,
 		},
-		ElementRemovedFromPaymentsLedger {
+		ElementRemovedFromPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 		},
-		ElementInPaymentsLedger(),
-		ElementNotInPaymentsLedger(),
+		ElementSetInPayments {
+			key_sender: T::AccountId,
+			key_receiver: T::AccountId,
+			ts: u32,
+		},
+		ElementInPayments(),
+		ElementNotInPayments(),
+
+		// Events related to Confirmations StorageNMap
+		ElementAddedToConfirmations {
+			key_confirmer: T::AccountId,
+			key_sender: T::AccountId,
+			key_receiver: T::AccountId,
+			ts: u32,
+			value: u32,
+		},
+		ElementRemovedFromConfirmations {
+			key_sender: T::AccountId,
+			key_receiver: T::AccountId,
+			ts: u32,
+		},
 	}
 
 	// Errors inform users that something went wrong.
@@ -98,121 +118,160 @@ pub mod pallet {
 	pub enum Error<T> {
 		NoneValue,
 		StorageOverflow,
-		ElementAlreadyExists,
-		ElementNotExists,
+		PaymentAlreadyExists,
+		PaymentNotExists,
+		ConfirmationAlreadyExists,
+		ConfirmationNotExists,
 	}
 
 	// Calls
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
+		// Calls with null weights
 		#[pallet::call_index(1)]
-		#[pallet::weight(T::WeightInfo::add_element())]
-		pub fn add_element(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32, value: u32) -> DispatchResult {
-			let source = ensure_signed(origin.clone())?;
+		#[pallet::weight(T::WeightInfo::check_payment_call())]
+		pub fn check_payment_call(origin: OriginFor<T>, key_sender: T::AccountId, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
+			let _ = ensure_signed(origin)?;
 
-			// The signer must be the sender in the key of the element to be inserted
-			PaymentsLedger::<T>::insert((source.clone(), key_receiver.clone(), ts), value);
-
-			Self::deposit_event(Event::ElementAddedToPaymentsLedger { key_sender: source, key_receiver, ts, value });
+			if Payments::<T>::contains_key((key_sender, key_receiver, ts)) == true {
+				Self::deposit_event(Event::ElementInPayments());
+			}
+			else {
+				Self::deposit_event(Event::ElementNotInPayments());
+			}
 
 			Ok(())
 		}
 
-		// Calls with null weights
 		#[pallet::call_index(2)]
-		#[pallet::weight(T::WeightInfo::exist_call())]
-		pub fn exist_call(origin: OriginFor<T>, key_sender: T::AccountId, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
+		#[pallet::weight(T::WeightInfo::check_payment_call())]
+		pub fn get_payment_call(origin: OriginFor<T>, key_sender: T::AccountId, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
 			let _ = ensure_signed(origin)?;
 
-			if PaymentsLedger::<T>::contains_key((key_sender, key_receiver, ts)) == true {
-				Self::deposit_event(Event::ElementInPaymentsLedger());
-			}
-			else {
-				Self::deposit_event(Event::ElementNotInPaymentsLedger());
-			}
+			let value = Payments::<T>::get((key_sender.clone(), key_receiver.clone(), ts));
+
+			Self::deposit_event(Event::ElementGotFromPayments { key_sender, key_receiver, ts, value });
 
 			Ok(())
 		}
 
 		#[pallet::call_index(3)]
-		#[pallet::weight(T::WeightInfo::get_element_call())]
-		pub fn get_element_call(origin: OriginFor<T>, key_sender: T::AccountId, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
-			let _ = ensure_signed(origin)?;
+		#[pallet::weight(T::WeightInfo::modify_payment())]
+		pub fn modify_payment(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32, value: u32) -> DispatchResult {
+			let source = ensure_signed(origin.clone())?;
 
-			let value = PaymentsLedger::<T>::get((key_sender.clone(), key_receiver.clone(), ts));
-
-			Self::deposit_event(Event::ElementGotFromPaymentsLedger { key_sender, key_receiver, ts, value });
-
-			Ok(())
+			match <Payments<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
+				false => return Err(Error::<T>::PaymentNotExists.into()),
+				true => {
+					// Check if a confirmation with the triple (sender, receiver, timestamp) has already been stored
+					match <Confirmations<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
+						true => return Err(Error::<T>::ConfirmationAlreadyExists.into()),
+						false => {
+							// Modify the payment
+							Payments::<T>::set((source.clone(), key_receiver.clone(), ts), value);
+							Self::deposit_event(Event::ElementSetInPayments { key_sender: source, key_receiver, ts});
+							Ok(())
+						}
+					}
+				},
+			}
 		}
 
 		#[pallet::call_index(4)]
-		#[pallet::weight(T::WeightInfo::remove_element())]
-		pub fn remove_element(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
+		#[pallet::weight(T::WeightInfo::add_payment())]
+		pub fn add_payment(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32, value: u32) -> DispatchResult {
 			let source = ensure_signed(origin.clone())?;
 
-			// The signer must be the sender in the key of the element to be removed
-			PaymentsLedger::<T>::remove((source.clone(), key_receiver.clone(), ts));
-
-			Self::deposit_event(Event::ElementRemovedFromPaymentsLedger { key_sender: source, key_receiver, ts});
-
-			Ok(())
-		}
-
-		#[pallet::call_index(5)]
-		#[pallet::weight(T::WeightInfo::set_element())]
-		pub fn set_element(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32, value: u32) -> DispatchResult {
-			let source = ensure_signed(origin.clone())?;
-
-			// The signer must be the sender in the key of the element to be removed
-			PaymentsLedger::<T>::set((source.clone(), key_receiver.clone(), ts), value);
-
-			Self::deposit_event(Event::ElementRemovedFromPaymentsLedger { key_sender: source, key_receiver, ts});
-
-			Ok(())
-		}
-
-		#[pallet::call_index(6)]
-		#[pallet::weight(T::WeightInfo::add_element_with_error())]
-		pub fn add_element_with_error(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32, value: u32) -> DispatchResult {
-			let source = ensure_signed(origin.clone())?;
-
-			match <PaymentsLedger<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
-				true => return Err(Error::<T>::ElementAlreadyExists.into()),
+			match <Payments<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
+				true => return Err(Error::<T>::PaymentAlreadyExists.into()),
 				false => {
-					// Insert the new element
-					PaymentsLedger::<T>::insert((source.clone(), key_receiver.clone(), ts), value);
-					Self::deposit_event(Event::ElementAddedToPaymentsLedger { key_sender: source, key_receiver, ts, value });
+					// Insert the new payment
+					Payments::<T>::insert((source.clone(), key_receiver.clone(), ts), value);
+					Self::deposit_event(Event::ElementAddedToPayments { key_sender: source, key_receiver, ts, value });
 					Ok(())
 				},
 			}
 		}
 
-		#[pallet::call_index(7)]
-		#[pallet::weight(T::WeightInfo::remove_element_with_error())]
-		pub fn remove_element_with_error(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
+		#[pallet::call_index(5)]
+		#[pallet::weight(T::WeightInfo::remove_payment())]
+		pub fn remove_payment(origin: OriginFor<T>, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
 			let source = ensure_signed(origin.clone())?;
 
-			match <PaymentsLedger<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
-				false => return Err(Error::<T>::ElementNotExists.into()),
+			match <Payments<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
+				false => return Err(Error::<T>::PaymentNotExists.into()),
 				true => {
-					// Remove the element
-					PaymentsLedger::<T>::remove((source.clone(), key_receiver.clone(), ts));
-					Self::deposit_event(Event::ElementRemovedFromPaymentsLedger { key_sender: source, key_receiver, ts});
-					Ok(())
+					// Check if a confirmation with the triple (sender, receiver, timestamp) has already been stored
+					match <Confirmations<T>>::contains_key((source.clone(), key_receiver.clone(), ts)) {
+						true => return Err(Error::<T>::ConfirmationAlreadyExists.into()),
+						false => {
+							// Remove the payment
+							Payments::<T>::remove((source.clone(), key_receiver.clone(), ts));
+							Self::deposit_event(Event::ElementRemovedFromPayments { key_sender: source, key_receiver, ts});
+							Ok(())
+						}
+					}
 				},
+			}
+		}
+
+		#[pallet::call_index(6)]
+		#[pallet::weight(T::WeightInfo::add_confirmation())]
+		pub fn add_confirmation(origin: OriginFor<T>, key_sender: T::AccountId, ts: u32, value: u32) -> DispatchResult {
+			let source = ensure_signed(origin.clone())?;
+
+			// Check if a payment with the triple (sender, receiver, timestamp) has already been stored
+			match <Payments<T>>::contains_key((key_sender.clone(), source.clone(), ts)) {
+				false => return Err(Error::<T>::PaymentNotExists.into()),
+				true => {
+					// Check if a confirmation with the triple (sender, receiver, timestamp) has already been stored
+					match <Confirmations<T>>::contains_key((key_sender.clone(), source.clone(), ts)) {
+						true => return Err(Error::<T>::ConfirmationAlreadyExists.into()),
+						false => {
+							// Insert the new confirmation
+							Confirmations::<T>::insert((key_sender.clone(), source.clone(), ts), 1);
+							Self::deposit_event(Event::ElementAddedToConfirmations { key_confirmer: source.clone(), key_sender: key_sender, key_receiver: source.clone(), ts, value });
+							Ok(())
+						}
+					}
+				},
+			}
+		}
+
+		#[pallet::call_index(7)]
+		#[pallet::weight(T::WeightInfo::remove_confirmation())]
+		pub fn remove_confirmation(origin: OriginFor<T>, key_sender: T::AccountId, ts: u32) -> DispatchResult {
+			let source = ensure_signed(origin.clone())?;
+
+			// Check if a confirmation with the triple (sender, receiver, timestamp) has already been stored
+			match <Confirmations<T>>::contains_key((key_sender.clone(), source.clone(), ts)) {
+				false => return Err(Error::<T>::ConfirmationNotExists.into()),
+				true => {
+					// Remove the confirmation
+					Confirmations::<T>::remove((key_sender.clone(), source.clone(), ts));
+					Self::deposit_event(Event::ElementRemovedFromConfirmations { key_sender: key_sender.clone(), key_receiver: source.clone(), ts});
+					Ok(())
+				}
 			}
 		}
 	}
 
 	// Queries
 	impl<T: Config> Pallet<T> {
-		pub fn get_element(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> u32 {
-			return PaymentsLedger::<T>::get((&key_sender, &key_receiver, &timestamp))
+		pub fn get_payment(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> u32 {
+			return Payments::<T>::get((&key_sender, &key_receiver, &timestamp))
 		}
 
-		pub fn exist(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> bool {
-			return PaymentsLedger::<T>::contains_key((&key_sender, &key_receiver, &timestamp))
+		pub fn check_payment(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> bool {
+			return Payments::<T>::contains_key((&key_sender, &key_receiver, &timestamp))
+		}
+
+		pub fn get_confirmation(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> u32 {
+			return Payments::<T>::get((&key_sender, &key_receiver, &timestamp))
+		}
+
+		pub fn check_confirmation(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> bool {
+			return Confirmations::<T>::contains_key((&key_sender, &key_receiver, &timestamp))
 		}
 	}
 }

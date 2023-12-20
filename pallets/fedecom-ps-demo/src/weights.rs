@@ -34,42 +34,42 @@ use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_template.
 pub trait WeightInfo {
-	fn add_element() -> Weight;
 	fn exist_call() -> Weight;
-	fn get_element_call() -> Weight;
-	fn remove_element() -> Weight;
-	fn set_element() -> Weight;
-	fn add_element_with_error() -> Weight;
-	fn remove_element_with_error() -> Weight;
+	fn check_payment_call() -> Weight;
+	fn modify_payment() -> Weight;
+	fn add_payment() -> Weight;
+	fn remove_payment() -> Weight;
+	fn add_confirmation() -> Weight;
+	fn remove_confirmation() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-	fn add_element() -> Weight {
-		Weight::from_parts(9_000_000, 0)
-			.saturating_add(T::DbWeight::get().writes(1_u64))
-	}
 	fn exist_call() -> Weight {
 		Weight::from_parts(0, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
-	fn get_element_call() -> Weight {
+	fn check_payment_call() -> Weight {
 		Weight::from_parts(0, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
-	fn remove_element() -> Weight {
+	fn modify_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
-	fn set_element() -> Weight {
+	fn add_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
-	fn add_element_with_error() -> Weight {
+	fn remove_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
-	fn remove_element_with_error() -> Weight {
+	fn add_confirmation() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	fn remove_confirmation() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -77,31 +77,31 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
-	fn add_element() -> Weight {
-		Weight::from_parts(9_000_000, 0)
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
-	}
 	fn exist_call() -> Weight {
 		Weight::from_parts(0, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
-	fn get_element_call() -> Weight {
+	fn check_payment_call() -> Weight {
 		Weight::from_parts(0, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
-	fn remove_element() -> Weight {
+	fn modify_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
-	fn set_element() -> Weight {
+	fn add_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
-	fn add_element_with_error() -> Weight {
+	fn remove_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
-	fn remove_element_with_error() -> Weight {
+	fn add_confirmation() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	fn remove_confirmation() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
