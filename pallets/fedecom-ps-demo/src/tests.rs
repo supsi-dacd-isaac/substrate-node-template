@@ -190,7 +190,7 @@ fn add_confirmation() {
             RuntimeOrigin::signed(receiver),
             sender,
             timestamp,
-            value_to_insert
+            1
         ));
 
         assert_eq!(FedecomPSDemo::get_confirmation(sender, receiver, timestamp), value_to_insert);
@@ -220,7 +220,7 @@ fn remove_confirmation() {
             RuntimeOrigin::signed(receiver),
             sender,
             timestamp,
-            value_to_insert
+            1
         ));
 
         assert_eq!(FedecomPSDemo::check_confirmation(sender, receiver, timestamp), true);
@@ -259,7 +259,7 @@ fn try_to_remove_confirmed_payment() {
             RuntimeOrigin::signed(receiver),
             sender,
             timestamp,
-            value_to_insert
+            1
         ));
 
         assert_eq!(FedecomPSDemo::check_confirmation(sender, receiver, timestamp), true);
@@ -298,7 +298,7 @@ fn try_to_modify_confirmed_payment() {
             RuntimeOrigin::signed(receiver),
             sender,
             timestamp,
-            value_to_insert
+            1
         ));
 
         assert_eq!(FedecomPSDemo::check_confirmation(sender, receiver, timestamp), true);

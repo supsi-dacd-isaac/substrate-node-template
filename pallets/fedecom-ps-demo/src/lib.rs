@@ -22,6 +22,10 @@ pub use weights::*;
 pub type KeyLedger = str;
 pub type ValueLedger = u32;
 
+const CONFIRMATION_OK: u32 = 1;
+const CONFIRMATION_NOK_OVERESTIMATION: u32 = 2;
+const CONFIRMATION_NOK_UNDERESTIMATION: u32 = 3;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
@@ -73,44 +77,47 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		// Events related to Payments StorageNMap
-		ElementGotFromPayments {
+		GotFromPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 			value: u32,
 		},
-		ElementAddedToPayments {
+		AddedToPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 			value: u32,
 		},
-		ElementRemovedFromPayments {
+		RemovedFromPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 		},
-		ElementSetInPayments {
+		SetInPayments {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 		},
-		ElementInPayments(),
-		ElementNotInPayments(),
+		InPayments(),
+		NotInPayments(),
 
 		// Events related to Confirmations StorageNMap
-		ElementAddedToConfirmations {
+		AddedToConfirmations {
 			key_confirmer: T::AccountId,
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
-			value: u32,
+			status: u32,
 		},
-		ElementRemovedFromConfirmations {
+		RemovedFromConfirmations {
 			key_sender: T::AccountId,
 			key_receiver: T::AccountId,
 			ts: u32,
 		},
+		ConfirmationOK(),
+		ConfirmationOverEstimation(),
+		ConfirmationUnderEstimation(),
 	}
 
 	// Errors inform users that something went wrong.
@@ -134,10 +141,10 @@ pub mod pallet {
 			let _ = ensure_signed(origin)?;
 
 			if Payments::<T>::contains_key((key_sender, key_receiver, ts)) == true {
-				Self::deposit_event(Event::ElementInPayments());
+				Self::deposit_event(Event::InPayments());
 			}
 			else {
-				Self::deposit_event(Event::ElementNotInPayments());
+				Self::deposit_event(Event::NotInPayments());
 			}
 
 			Ok(())
@@ -150,7 +157,7 @@ pub mod pallet {
 
 			let value = Payments::<T>::get((key_sender.clone(), key_receiver.clone(), ts));
 
-			Self::deposit_event(Event::ElementGotFromPayments { key_sender, key_receiver, ts, value });
+			Self::deposit_event(Event::GotFromPayments { key_sender, key_receiver, ts, value });
 
 			Ok(())
 		}
@@ -169,7 +176,7 @@ pub mod pallet {
 						false => {
 							// Modify the payment
 							Payments::<T>::set((source.clone(), key_receiver.clone(), ts), value);
-							Self::deposit_event(Event::ElementSetInPayments { key_sender: source, key_receiver, ts});
+							Self::deposit_event(Event::SetInPayments { key_sender: source, key_receiver, ts});
 							Ok(())
 						}
 					}
@@ -187,7 +194,7 @@ pub mod pallet {
 				false => {
 					// Insert the new payment
 					Payments::<T>::insert((source.clone(), key_receiver.clone(), ts), value);
-					Self::deposit_event(Event::ElementAddedToPayments { key_sender: source, key_receiver, ts, value });
+					Self::deposit_event(Event::AddedToPayments { key_sender: source, key_receiver, ts, value });
 					Ok(())
 				},
 			}
@@ -207,7 +214,7 @@ pub mod pallet {
 						false => {
 							// Remove the payment
 							Payments::<T>::remove((source.clone(), key_receiver.clone(), ts));
-							Self::deposit_event(Event::ElementRemovedFromPayments { key_sender: source, key_receiver, ts});
+							Self::deposit_event(Event::RemovedFromPayments { key_sender: source, key_receiver, ts});
 							Ok(())
 						}
 					}
@@ -217,7 +224,7 @@ pub mod pallet {
 
 		#[pallet::call_index(6)]
 		#[pallet::weight(T::WeightInfo::add_confirmation())]
-		pub fn add_confirmation(origin: OriginFor<T>, key_sender: T::AccountId, ts: u32, value: u32) -> DispatchResult {
+		pub fn add_confirmation(origin: OriginFor<T>, key_sender: T::AccountId, ts: u32, status: u32) -> DispatchResult {
 			let source = ensure_signed(origin.clone())?;
 
 			// Check if a payment with the triple (sender, receiver, timestamp) has already been stored
@@ -229,8 +236,20 @@ pub mod pallet {
 						true => return Err(Error::<T>::ConfirmationAlreadyExists.into()),
 						false => {
 							// Insert the new confirmation
-							Confirmations::<T>::insert((key_sender.clone(), source.clone(), ts), 1);
-							Self::deposit_event(Event::ElementAddedToConfirmations { key_confirmer: source.clone(), key_sender: key_sender, key_receiver: source.clone(), ts, value });
+							Confirmations::<T>::insert((key_sender.clone(), source.clone(), ts), status);
+
+							Self::deposit_event(Event::AddedToConfirmations { key_confirmer: source.clone(), key_sender: key_sender, key_receiver: source.clone(), ts, status });
+
+							if status == CONFIRMATION_OK {
+								Self::deposit_event(Event::ConfirmationOK ());
+							}
+							else if status == CONFIRMATION_NOK_OVERESTIMATION {
+								Self::deposit_event(Event::ConfirmationOverEstimation ());
+							}
+							else if status == CONFIRMATION_NOK_UNDERESTIMATION {
+								Self::deposit_event(Event::ConfirmationUnderEstimation ());
+							}
+
 							Ok(())
 						}
 					}
@@ -249,7 +268,7 @@ pub mod pallet {
 				true => {
 					// Remove the confirmation
 					Confirmations::<T>::remove((key_sender.clone(), source.clone(), ts));
-					Self::deposit_event(Event::ElementRemovedFromConfirmations { key_sender: key_sender.clone(), key_receiver: source.clone(), ts});
+					Self::deposit_event(Event::RemovedFromConfirmations { key_sender: key_sender.clone(), key_receiver: source.clone(), ts});
 					Ok(())
 				}
 			}
