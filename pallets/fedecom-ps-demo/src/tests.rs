@@ -1,4 +1,4 @@
-use crate::{mock::*};
+use crate::{FlexibilitySellingData, FLEXIBILITY_SELLING_STATE_NOT_DECIDED, FLEXIBILITY_SELLING_STATE_CONFIRMED, FLEXIBILITY_SELLING_STATE_REJECTED, mock::*};
 use frame_support::{assert_ok};
 
 #[test]
@@ -315,6 +315,128 @@ fn try_to_modify_confirmed_payment() {
         assert_eq!(FedecomPSDemo::check_payment(sender, receiver, timestamp), true);
         assert_eq!(FedecomPSDemo::check_confirmation(sender, receiver, timestamp), true);
     });
+}
+#[test]
+fn try_to_sell_flexibility_confirmed() {
+    new_test_ext().execute_with(|| {
+        let seller = 1;
+        let buyer = 2;
+        let flexibility_market_identifier = 100;
+        let flexibility_market_timestamp = 1234567890;
+        let asset_identifier = 200;
+        let sold_power = 10;
+        let change_fct_w = 2;
+
+        // Try to change the state of a not-existing market
+        assert!(FedecomPSDemo::flexibility_purchase_decision(
+            RuntimeOrigin::signed(buyer),
+            seller,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            FLEXIBILITY_SELLING_STATE_NOT_DECIDED
+        ).is_err());
+
+        // Try to sell the flexibility
+        assert_ok!(FedecomPSDemo::flexibility_selling(
+            RuntimeOrigin::signed(seller),
+            buyer,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            sold_power,
+            change_fct_w)
+        );
+
+        // Check if the flexibility was correctly saved
+        let flexibility_data = FlexibilitySellingData { sold_power, change_fct_w, state: FLEXIBILITY_SELLING_STATE_NOT_DECIDED };
+        assert_eq!(FedecomPSDemo::get_flexibility_selling(
+            seller,
+            buyer,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier), flexibility_data
+        );
+
+        // Try to confirm the flexibility purchase
+        assert_ok!(FedecomPSDemo::flexibility_purchase_decision(
+            RuntimeOrigin::signed(buyer),
+            seller,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            FLEXIBILITY_SELLING_STATE_CONFIRMED)
+        );
+
+        // Check if the flexibility was confirmed
+        let flexibility_data = FlexibilitySellingData { sold_power, change_fct_w, state: FLEXIBILITY_SELLING_STATE_CONFIRMED };
+        assert_eq!(FedecomPSDemo::get_flexibility_selling(
+            seller,
+            buyer,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier), flexibility_data
+        );
+
+        // Check the buyer's payment
+        assert_eq!(FedecomPSDemo::get_payment(buyer, seller, flexibility_market_timestamp), sold_power * change_fct_w);
+
+        // Try to change the state of the market, which has been already decided here above (in this case confirmed)
+        assert!(FedecomPSDemo::flexibility_purchase_decision(
+            RuntimeOrigin::signed(buyer),
+            seller,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            FLEXIBILITY_SELLING_STATE_REJECTED
+        ).is_err());
+    })
+}
+#[test]
+fn try_to_sell_flexibility_rejected() {
+    new_test_ext().execute_with(|| {
+        let seller = 1;
+        let buyer = 2;
+        let flexibility_market_identifier = 100;
+        let flexibility_market_timestamp = 1234567890;
+        let asset_identifier = 200;
+        let sold_power = 10;
+        let change_fct_w = 2;
+
+        // Try to sell the flexibility
+        assert_ok!(FedecomPSDemo::flexibility_selling(
+            RuntimeOrigin::signed(seller),
+            buyer,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            sold_power,
+            change_fct_w)
+        );
+
+        // Try to reject the flexibility purchase
+        assert_ok!(FedecomPSDemo::flexibility_purchase_decision(
+            RuntimeOrigin::signed(buyer),
+            seller,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier,
+            FLEXIBILITY_SELLING_STATE_REJECTED)
+        );
+
+        // Check if the flexibility was rejected
+        let flexibility_data = FlexibilitySellingData { sold_power, change_fct_w, state: FLEXIBILITY_SELLING_STATE_REJECTED };
+        assert_eq!(FedecomPSDemo::get_flexibility_selling(
+            seller,
+            buyer,
+            flexibility_market_identifier,
+            flexibility_market_timestamp,
+            asset_identifier), flexibility_data
+        );
+
+        // Check if the buyer's payment has not been performed
+        assert_eq!(FedecomPSDemo::check_payment(buyer, seller, flexibility_market_timestamp), false);
+    })
 }
 
 

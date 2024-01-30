@@ -36,11 +36,14 @@ use core::marker::PhantomData;
 pub trait WeightInfo {
 	fn exist_call() -> Weight;
 	fn check_payment_call() -> Weight;
+	fn get_payment_call() -> Weight;
 	fn modify_payment() -> Weight;
 	fn add_payment() -> Weight;
 	fn remove_payment() -> Weight;
 	fn add_confirmation() -> Weight;
 	fn remove_confirmation() -> Weight;
+	fn flexibility_selling() -> Weight;
+	fn flexibility_purchase() -> Weight;
 }
 
 pub struct SubstrateWeight<T>(PhantomData<T>);
@@ -50,6 +53,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	fn check_payment_call() -> Weight {
+		Weight::from_parts(0, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	fn get_payment_call() -> Weight {
 		Weight::from_parts(0, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -70,6 +77,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	fn remove_confirmation() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	fn flexibility_selling() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	fn flexibility_purchase() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -85,6 +100,10 @@ impl WeightInfo for () {
 		Weight::from_parts(0, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
+	fn get_payment_call() -> Weight {
+		Weight::from_parts(0, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
 	fn modify_payment() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
@@ -102,6 +121,14 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	fn remove_confirmation() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	fn flexibility_selling() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	fn flexibility_purchase() -> Weight {
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}

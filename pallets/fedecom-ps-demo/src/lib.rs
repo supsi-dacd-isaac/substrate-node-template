@@ -32,6 +32,10 @@ pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 
+	pub const FLEXIBILITY_SELLING_STATE_NOT_DECIDED: u32 = 1;
+	pub  const FLEXIBILITY_SELLING_STATE_CONFIRMED: u32 = 2;
+	pub const FLEXIBILITY_SELLING_STATE_REJECTED: u32 = 3;
+
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
@@ -71,6 +75,36 @@ pub mod pallet {
 		),
 		u32,
 		ValueQuery,
+	>;
+
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, Default, MaxEncodedLen, TypeInfo)]
+	pub struct FlexibilitySellingData {
+		// Sold power of the asset/flexibility
+		pub sold_power: u32,
+		// Change FCT/W related to a specific flexibility market
+		pub change_fct_w: u32,
+		// Selling state
+		pub state: u32,
+	}
+
+	#[pallet::storage]
+	#[pallet::getter(fn flexibility_market_ledger)]
+	pub(super) type FlexibilityMarketLedger<T: Config> = StorageNMap<
+		_,
+		(
+			// Seller
+			NMapKey<Blake2_128Concat, T::AccountId>,
+			// Buyer
+			NMapKey<Blake2_128Concat, T::AccountId>,
+			// Flexibility market identifier
+			NMapKey<Twox64Concat, u32>,
+			// Flexibility market timestamp
+			NMapKey<Twox64Concat, u32>,
+			// Asset/flexibility identifier
+			NMapKey<Twox64Concat, u32>,
+		),
+		FlexibilitySellingData,
+	    ValueQuery,
 	>;
 
 	#[pallet::event]
@@ -118,6 +152,44 @@ pub mod pallet {
 		ConfirmationOK(),
 		ConfirmationOverEstimation(),
 		ConfirmationUnderEstimation(),
+
+		SuccessfullySoldFlexibility {
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			flexibility_market_identifier: u32,
+			flexibility_market_timestamp: u32,
+			asset_identifier: u32,
+			sold_power: u32,
+			change_fct_w: u32
+		},
+		AlreadySoldFlexibility {
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			flexibility_market_identifier: u32,
+			flexibility_market_timestamp: u32,
+			asset_identifier: u32,
+		},
+		FlexibilitySellingNotExisting {
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			flexibility_market_identifier: u32,
+			flexibility_market_timestamp: u32,
+			asset_identifier: u32,
+		},
+		FlexibilitySellingConfirmed {
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			flexibility_market_identifier: u32,
+			flexibility_market_timestamp: u32,
+			asset_identifier: u32,
+		},
+		FlexibilitySellingRejected {
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			flexibility_market_identifier: u32,
+			flexibility_market_timestamp: u32,
+			asset_identifier: u32,
+		}
 	}
 
 	// Errors inform users that something went wrong.
@@ -129,6 +201,10 @@ pub mod pallet {
 		PaymentNotExists,
 		ConfirmationAlreadyExists,
 		ConfirmationNotExists,
+		FlexibilitySellingNotExisting,
+		FlexibilitySellingAlreadyDecided,
+		FlexibilitySellingRejected,
+		FlexibilitySellingUnknownState,
 	}
 
 	// Calls
@@ -151,7 +227,7 @@ pub mod pallet {
 		}
 
 		#[pallet::call_index(2)]
-		#[pallet::weight(T::WeightInfo::check_payment_call())]
+		#[pallet::weight(T::WeightInfo::get_payment_call())]
 		pub fn get_payment_call(origin: OriginFor<T>, key_sender: T::AccountId, key_receiver: T::AccountId, ts: u32) -> DispatchResult {
 			let _ = ensure_signed(origin)?;
 
@@ -273,6 +349,120 @@ pub mod pallet {
 				}
 			}
 		}
+
+		#[pallet::call_index(8)]
+		#[pallet::weight(T::WeightInfo::flexibility_selling())]
+		pub fn flexibility_selling(origin: OriginFor<T>,
+								   buyer: T::AccountId,
+								   flexibility_market_identifier: u32,
+								   flexibility_market_timestamp: u32,
+								   asset_identifier: u32,
+								   sold_power: u32,
+								   change_fct_w: u32,
+								   ) -> DispatchResult {
+			let seller = ensure_signed(origin.clone())?;
+			let flexibility_data = FlexibilitySellingData { sold_power, change_fct_w, state: FLEXIBILITY_SELLING_STATE_NOT_DECIDED};
+			FlexibilityMarketLedger::<T>::insert((seller.clone(), buyer.clone(), flexibility_market_identifier, flexibility_market_timestamp, asset_identifier),
+												 flexibility_data);
+
+			if FlexibilityMarketLedger::<T>::contains_key((seller.clone(), buyer.clone(), flexibility_market_identifier, flexibility_market_timestamp, asset_identifier)) == true {
+				Self::deposit_event(Event::AlreadySoldFlexibility {
+					seller,
+					buyer,
+					flexibility_market_identifier,
+					flexibility_market_timestamp,
+					asset_identifier
+				});
+			}
+			else {
+				Self::deposit_event(Event::SuccessfullySoldFlexibility {
+					seller,
+					buyer,
+					flexibility_market_identifier,
+					flexibility_market_timestamp,
+					asset_identifier,
+					sold_power,
+					change_fct_w
+				});
+			}
+
+			Ok(())
+		}
+
+		#[pallet::call_index(9)]
+		#[pallet::weight(T::WeightInfo::flexibility_purchase())]
+		pub fn flexibility_purchase_decision(origin: OriginFor<T>,
+											seller: T::AccountId,
+											flexibility_market_identifier: u32,
+											flexibility_market_timestamp: u32,
+											asset_identifier: u32,
+											new_state: u32
+		) -> DispatchResult {
+			let buyer = ensure_signed(origin.clone())?;
+
+			match <FlexibilityMarketLedger<T>>::contains_key((seller.clone(), buyer.clone(), flexibility_market_identifier, flexibility_market_timestamp, asset_identifier)) {
+				false => {
+					// Not existing entry
+					Self::deposit_event(Event::FlexibilitySellingNotExisting {
+						seller,
+						buyer,
+						flexibility_market_identifier,
+						flexibility_market_timestamp,
+						asset_identifier
+					});
+					return Err(Error::<T>::FlexibilitySellingNotExisting.into())
+				},
+				true => {
+					let mut flexibility_data = FlexibilityMarketLedger::<T>::get((&seller, &buyer, &flexibility_market_identifier, &flexibility_market_timestamp, &asset_identifier));
+					match flexibility_data.state {
+						FLEXIBILITY_SELLING_STATE_NOT_DECIDED => {
+							match new_state {
+								// The selling is confirmed by the buyer
+								FLEXIBILITY_SELLING_STATE_CONFIRMED => {
+									// Market state confirmation
+									flexibility_data.state = new_state;
+									FlexibilityMarketLedger::<T>::set((seller.clone(), buyer.clone(), flexibility_market_identifier, flexibility_market_timestamp, asset_identifier),
+																	  flexibility_data.clone());
+
+									// Perform the payment
+									let tkns_to_pay = flexibility_data.sold_power * flexibility_data.change_fct_w;
+									Payments::<T>::insert((buyer.clone(), seller.clone(), flexibility_market_timestamp), tkns_to_pay);
+
+									Self::deposit_event(Event::FlexibilitySellingConfirmed {
+										seller,
+										buyer,
+										flexibility_market_identifier,
+										flexibility_market_timestamp,
+										asset_identifier
+									});
+									Ok(())
+								}
+								// The selling is rejected by the buyer
+								FLEXIBILITY_SELLING_STATE_REJECTED => {
+									// Market state rejection
+									flexibility_data.state = new_state;
+									FlexibilityMarketLedger::<T>::set((seller.clone(), buyer.clone(), flexibility_market_identifier, flexibility_market_timestamp, asset_identifier),
+																	  flexibility_data.clone());
+
+									Self::deposit_event(Event::FlexibilitySellingRejected {
+										seller,
+										buyer,
+										flexibility_market_identifier,
+										flexibility_market_timestamp,
+										asset_identifier
+									});
+									Ok(())
+								}
+								_ => { return Err(Error::<T>::FlexibilitySellingUnknownState.into()) }
+							}
+						}
+						_ => {
+							return Err(Error::<T>::ConfirmationAlreadyExists.into())
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Queries
@@ -291,6 +481,13 @@ pub mod pallet {
 
 		pub fn check_confirmation(key_sender: T::AccountId, key_receiver: T::AccountId, timestamp: u32) -> bool {
 			return Confirmations::<T>::contains_key((&key_sender, &key_receiver, &timestamp))
+		}
+		pub fn get_flexibility_selling(seller: T::AccountId,
+									   buyer: T::AccountId,
+									   flexibility_market_identifier: u32,
+									   flexibility_market_timestamp: u32,
+									   asset_identifier: u32) -> FlexibilitySellingData {
+			return FlexibilityMarketLedger::<T>::get((&seller, &buyer, &flexibility_market_identifier, &flexibility_market_timestamp, &asset_identifier))
 		}
 	}
 }
